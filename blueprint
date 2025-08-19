@@ -1,3 +1,4 @@
+
 blueprint:
   name: "🌱 Automatische Lüftersteuerung: Temperatur & Luftfeuchte"
   description: >
@@ -91,8 +92,8 @@ variables:
 
 action:
   - variables:
-      current_temp: "{{ states(temp_sensor) | float }}"
-      current_humidity: "{{ states(humidity_sensor) | float }}"
+      current_temp: "{{ states(temp_sensor) | float(0) }}"
+      current_humidity: "{{ states(humidity_sensor) | float(0) }}"
       fan_is_on: "{{ is_state(fan_switch, 'on') }}"
       fan_is_off: "{{ is_state(fan_switch, 'off') }}"
 
@@ -137,5 +138,3 @@ action:
                     data:
                       message: >-
                         Lüfter AUS! Temperatur: {{ current_temp }}°C, Luftfeuchtigkeit: {{ current_humidity }}%
-
-# Ende
