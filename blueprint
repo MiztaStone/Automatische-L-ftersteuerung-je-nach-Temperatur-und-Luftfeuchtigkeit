@@ -1,0 +1,141 @@
+blueprint:
+  name: "🌱 Automatische Lüftersteuerung: Temperatur & Luftfeuchte"
+  description: >
+    Steuert einen Abluft-/Umluftventilator je nach gemessener Temperatur und/oder Luftfeuchtigkeit.
+    Der Lüfter wird aktiviert, wenn mindestens ein Wert über dem Soll liegt und wieder deaktiviert, wenn alle Messwerte in Ordnung sind.
+    Optional: Sende Push-Benachrichtigung über Schaltvorgänge.
+
+  domain: automation
+  input:
+    fan_switch:
+      name: Lüfter-Schalter
+      description: Die zu steuernde Steckdose/Relais für den Lüfter.
+      selector:
+        entity:
+          domain: switch
+
+    temp_sensor:
+      name: Temperatursensor
+      description: Der Temperatursensor (°C) für die Steuerung.
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    temp_threshold:
+      name: Max. Temperatur (°C)
+      description: Ab diesem Wert wird der Lüfter eingeschaltet.
+      default: 27
+      selector:
+        number:
+          min: 10
+          max: 40
+          step: 0.1
+          unit_of_measurement: "°C"
+
+    humidity_sensor:
+      name: Luftfeuchte-Sensor
+      description: Sensor für relative Luftfeuchte (%).
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+
+    humidity_threshold:
+      name: Max. rel. Luftfeuchte (%)
+      description: Ab diesem Wert wird der Lüfter eingeschaltet.
+      default: 65
+      selector:
+        number:
+          min: 40
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    min_run_time:
+      name: Mindestlaufzeit (Sekunden)
+      description: Mindestens so lange läuft der Lüfter bei Aktivierung (gegen zu häufiges Schalten).
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 900
+          step: 1
+          unit_of_measurement: "s"
+
+    notification_service:
+      name: Benachrichtigungsdienst (optional)
+      description: Bei Schaltvorgängen wird eine Nachricht verschickt (z.B. "notify.mobile_app_dein_handy"). Leer lassen, um zu verzichten.
+      default: ""
+      selector:
+        text: {}
+
+mode: single
+
+trigger:
+  - platform: state
+    entity_id: !input temp_sensor
+  - platform: state
+    entity_id: !input humidity_sensor
+
+condition: []
+
+variables:
+  temp_sensor: !input temp_sensor
+  humidity_sensor: !input humidity_sensor
+  temp_threshold: !input temp_threshold
+  humidity_threshold: !input humidity_threshold
+  fan_switch: !input fan_switch
+  min_run_time: !input min_run_time
+  notification_service: !input notification_service
+
+action:
+  - variables:
+      current_temp: "{{ states(temp_sensor) | float }}"
+      current_humidity: "{{ states(humidity_sensor) | float }}"
+      fan_is_on: "{{ is_state(fan_switch, 'on') }}"
+      fan_is_off: "{{ is_state(fan_switch, 'off') }}"
+
+  - choose:
+      # Einschalten, wenn Temperatur oder Feuchte zu hoch
+      - conditions:
+          - or:
+              - condition: template
+                value_template: "{{ current_temp >= (temp_threshold | float) }}"
+              - condition: template
+                value_template: "{{ current_humidity >= (humidity_threshold | float) }}"
+          - condition: template
+            value_template: "{{ fan_is_off }}"
+        sequence:
+          - service: switch.turn_on
+            entity_id: !input fan_switch
+          - choose:
+              - conditions: >
+                  {{ notification_service | length > 0 }}
+                sequence:
+                  - service: "{{ notification_service }}"
+                    data:
+                      message: >-
+                        Lüfter EIN! Temperatur: {{ current_temp }}°C, Luftfeuchtigkeit: {{ current_humidity }}%
+          - delay:
+              seconds: "{{ min_run_time }}"
+
+      # Ausschalten, wenn alles im grünen Bereich
+      - conditions:
+          - condition: template
+            value_template: "{{ current_temp < (temp_threshold | float) and current_humidity < (humidity_threshold | float) }}"
+          - condition: template
+            value_template: "{{ fan_is_on }}"
+        sequence:
+          - service: switch.turn_off
+            entity_id: !input fan_switch
+          - choose:
+              - conditions: >
+                  {{ notification_service | length > 0 }}
+                sequence:
+                  - service: "{{ notification_service }}"
+                    data:
+                      message: >-
+                        Lüfter AUS! Temperatur: {{ current_temp }}°C, Luftfeuchtigkeit: {{ current_humidity }}%
+
+# Ende
